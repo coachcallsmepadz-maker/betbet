@@ -14,150 +14,333 @@ import {
   ShieldCheck,
   Target,
   ChevronDown,
-  LayoutDashboard
+  LayoutDashboard,
+  RefreshCw,
+  Calendar,
+  Clock,
+  Users,
+  TrendingDown,
+  Sparkles
 } from 'lucide-react';
 
-// --- CONSTANTS & MOCK DATA ---
-const apiKey = ""; // Gemini API Key
+// --- API KEYS ---
+const GEMINI_API_KEY = "AIzaSyBQVkejqgQKPykDd2nlNE8d2SW1guvHLcw"; // Your Gemini API Key
+const ODDS_API_KEY = "e6ea43b0ec41228fa519a024a781d909"; // The Odds API Key (get free at https://the-odds-api.com)
 
+// --- CONSTANTS ---
 const SPORTS = [
-  { id: 'nba', name: 'NBA', icon: '🏀' },
-  { id: 'nfl', name: 'NFL', icon: '🏈' },
-  { id: 'epl', name: 'Premier League', icon: '⚽' },
-  { id: 'mlb', name: 'MLB', icon: '⚾' },
-  { id: 'laliga', name: 'La Liga', icon: '⚽' },
+  { id: 'basketball_nba', apiId: 'basketball_nba', name: 'NBA', icon: '🏀' },
+  { id: 'americanfootball_nfl', apiId: 'americanfootball_nfl', name: 'NFL', icon: '🏈' },
+  { id: 'soccer_epl', apiId: 'soccer_epl', name: 'Premier League', icon: '⚽' },
+  { id: 'baseball_mlb', apiId: 'baseball_mlb', name: 'MLB', icon: '⚾' },
 ];
 
 const TEAMS = [
   { name: 'Antigravity Default', primary: '#00F2FF', secondary: '#FF3131', sport: 'all' },
-  { name: 'LA Lakers', primary: '#552583', secondary: '#FDB927', sport: 'nba' },
-  { name: 'Boston Celtics', primary: '#007A33', secondary: '#BA9653', sport: 'nba' },
-  { name: 'GS Warriors', primary: '#1D428A', secondary: '#FFC72C', sport: 'nba' },
-  { name: 'Dallas Cowboys', primary: '#003594', secondary: '#869397', sport: 'nfl' },
-  { name: 'KC Chiefs', primary: '#E31837', secondary: '#FFB81C', sport: 'nfl' },
-  { name: 'Man City', primary: '#6CABDD', secondary: '#FFFFFF', sport: 'epl' },
-  { name: 'Arsenal', primary: '#EF0107', secondary: '#FFFFFF', sport: 'epl' },
-  { name: 'Real Madrid', primary: '#FEBE10', secondary: '#00529F', sport: 'laliga' },
-  { name: 'NY Yankees', primary: '#003087', secondary: '#E31837', sport: 'mlb' },
+  { name: 'LA Lakers', primary: '#552583', secondary: '#FDB927', sport: 'basketball_nba' },
+  { name: 'Boston Celtics', primary: '#007A33', secondary: '#BA9653', sport: 'basketball_nba' },
+  { name: 'GS Warriors', primary: '#1D428A', secondary: '#FFC72C', sport: 'basketball_nba' },
+  { name: 'Dallas Cowboys', primary: '#003594', secondary: '#869397', sport: 'americanfootball_nfl' },
+  { name: 'KC Chiefs', primary: '#E31837', secondary: '#FFB81C', sport: 'americanfootball_nfl' },
+  { name: 'Man City', primary: '#6CABDD', secondary: '#FFFFFF', sport: 'soccer_epl' },
+  { name: 'Arsenal', primary: '#EF0107', secondary: '#FFFFFF', sport: 'soccer_epl' },
+  { name: 'NY Yankees', primary: '#003087', secondary: '#E31837', sport: 'baseball_mlb' },
 ];
 
-const MOCK_GAMES = {
-  nba: [
-    { id: 1, home: 'LA Lakers', away: 'GS Warriors', odds: [1.85, 2.05], time: 'LIVE IN 2H', venue: 'CRYPTO.COM ARENA' },
-    { id: 2, home: 'Boston Celtics', away: 'Miami Heat', odds: [1.45, 2.85], time: 'LIVE IN 5H', venue: 'TD GARDEN' },
+// Mock bet types for SGM builder
+const BET_TYPES = {
+  basketball_nba: [
+    { id: 'player_points', label: 'Player Points', category: 'Player Props' },
+    { id: 'player_rebounds', label: 'Player Rebounds', category: 'Player Props' },
+    { id: 'player_assists', label: 'Player Assists', category: 'Player Props' },
+    { id: 'team_total', label: 'Team Total Points', category: 'Team Props' },
+    { id: 'spread', label: 'Point Spread', category: 'Game Lines' },
+    { id: 'moneyline', label: 'Moneyline', category: 'Game Lines' },
   ],
-  nfl: [
-    { id: 3, home: 'Dallas Cowboys', away: 'NY Giants', odds: [1.35, 3.40], time: 'SUN 8:00PM', venue: 'AT&T STADIUM' },
+  americanfootball_nfl: [
+    { id: 'player_passing_yards', label: 'Passing Yards', category: 'Player Props' },
+    { id: 'player_rushing_yards', label: 'Rushing Yards', category: 'Player Props' },
+    { id: 'player_touchdowns', label: 'Touchdowns', category: 'Player Props' },
+    { id: 'team_total', label: 'Team Total Points', category: 'Team Props' },
+    { id: 'spread', label: 'Point Spread', category: 'Game Lines' },
   ],
-  epl: [
-    { id: 4, home: 'Man City', away: 'Arsenal', odds: [1.95, 3.80], time: 'SAT 12:30PM', venue: 'ETIHAD STADIUM' },
-  ]
 };
 
-// --- API INTEGRATION (Gemini 2.5 Flash) ---
-const fetchSportsData = async (gameInfo, key) => {
-  if (!key) {
-    // Fallback if no key is provided
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          injuries: ["LeBron James (Active)", "Stephen Curry (Active)", "Kevon Looney (GTD)"],
-          venueHistory: "Lakers have won 65% of H2H matchups at Crypto.com Arena since 2022.",
-          currentForm: "Warriors are 4-1 in their last 5 games; Lakers are 3-2.",
-          gravityScore: 78
-        });
-      }, 1500);
-    });
+// --- API FUNCTIONS ---
+
+// Fetch tomorrow's games from The Odds API
+const fetchTomorrowGames = async (sport, apiKey) => {
+  if (!apiKey) {
+    // Return mock data if no API key
+    return getMockGames(sport);
   }
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`;
+  try {
+    const response = await fetch(
+      `https://api.the-odds-api.com/v4/sports/${sport}/odds/?apiKey=${apiKey}&regions=us&markets=h2h,spreads,totals&oddsFormat=decimal`
+    );
 
-  const prompt = `Analyze the sports game: ${gameInfo.home} vs ${gameInfo.away} at ${gameInfo.venue}. 
-  Find real-time:
-  1. Injury List (active/out/GTD).
-  2. Arena/Matchup History at ${gameInfo.venue}.
-  3. Current Form (last 5 games).
-  Calculate a percentage "Gravity Score" (Confidence score) for the Home Team win.
-  Respond ONLY as a JSON object: { "injuries": ["list"], "venueHistory": "string", "currentForm": "string", "gravityScore": number }`;
+    if (!response.ok) throw new Error('API request failed');
 
-  const performFetch = async (retries = 5, backoff = 1000) => {
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          tools: [{ google_search: {} }]
-        })
-      });
-      if (!response.ok) throw new Error("API Failure");
-      const result = await response.json();
-      const content = result.candidates[0].content.parts[0].text;
-      return JSON.parse(content.substring(content.indexOf('{'), content.lastIndexOf('}') + 1));
-    } catch (err) {
-      if (retries === 0) throw err;
-      await new Promise(r => setTimeout(r, backoff));
-      return performFetch(retries - 1, backoff * 2);
-    }
-  };
+    const data = await response.json();
 
-  return performFetch();
+    // Filter for games in the next 7 days
+    const now = new Date();
+    const sevenDaysFromNow = new Date();
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+
+    return data
+      .filter(game => {
+        const gameDate = new Date(game.commence_time);
+        return gameDate >= now && gameDate <= sevenDaysFromNow;
+      })
+      .map(game => ({
+        id: game.id,
+        home: game.home_team,
+        away: game.away_team,
+        time: new Date(game.commence_time).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        }),
+        date: new Date(game.commence_time).toLocaleDateString(),
+        odds: game.bookmakers[0]?.markets.find(m => m.key === 'h2h')?.outcomes.map(o => o.price) || [1.90, 1.90],
+        venue: 'TBD',
+        sport: sport
+      }));
+  } catch (error) {
+    console.error('Error fetching games:', error);
+    return getMockGames(sport);
+  }
 };
 
+// Mock games fallback
+const getMockGames = (sport) => {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const mockData = {
+    basketball_nba: [
+      { id: 'nba1', home: 'LA Lakers', away: 'GS Warriors', odds: [1.85, 2.05], time: '7:30 PM', date: tomorrow.toLocaleDateString(), venue: 'CRYPTO.COM ARENA', sport: 'basketball_nba' },
+      { id: 'nba2', home: 'Boston Celtics', away: 'Miami Heat', odds: [1.45, 2.85], time: '7:00 PM', date: tomorrow.toLocaleDateString(), venue: 'TD GARDEN', sport: 'basketball_nba' },
+      { id: 'nba3', home: 'Phoenix Suns', away: 'Denver Nuggets', odds: [2.10, 1.78], time: '9:00 PM', date: tomorrow.toLocaleDateString(), venue: 'FOOTPRINT CENTER', sport: 'basketball_nba' },
+    ],
+    americanfootball_nfl: [
+      { id: 'nfl1', home: 'Dallas Cowboys', away: 'NY Giants', odds: [1.35, 3.40], time: '8:00 PM', date: tomorrow.toLocaleDateString(), venue: 'AT&T STADIUM', sport: 'americanfootball_nfl' },
+    ],
+    soccer_epl: [
+      { id: 'epl1', home: 'Man City', away: 'Arsenal', odds: [1.95, 3.80], time: '12:30 PM', date: tomorrow.toLocaleDateString(), venue: 'ETIHAD STADIUM', sport: 'soccer_epl' },
+    ],
+  };
+
+  return mockData[sport] || [];
+};
+
+// AI-Powered Same Game Multi Generator
+const generateSameGameMulti = async (game, targetOdds, apiKey) => {
+  if (!apiKey) {
+    // Return mock SGM if no API key
+    return getMockSGM(game, targetOdds);
+  }
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
+
+  const prompt = `You are a professional sports betting analyst. Analyze this upcoming game and generate a Same Game Multi (SGM) parlay.
+
+**Game Details:**
+- Sport: ${game.sport}
+- Matchup: ${game.home} (Home) vs ${game.away} (Away)
+- Venue: ${game.venue}
+- Date/Time: ${game.date} at ${game.time}
+- Current Moneyline Odds: Home ${game.odds[0]}, Away ${game.odds[1]}
+
+**Target:** Generate a same-game multi with total odds close to ${targetOdds || '5.0'}.
+
+**Research Required (use Google Search):**
+1. **Player Performance Analysis:**
+   - Find key players for both teams
+   - Historical stats of these players against this specific opponent
+   - Recent form (last 5 games)
+   - Arena-specific performance if playing at ${game.venue}
+
+2. **Team Trends:**
+   - Recent scoring averages
+   - Pace of play
+   - Defensive ratings
+   - Head-to-head history
+
+3. **Matchup Factors:**
+   - Current injuries or lineup changes
+   - Rest days between games
+   - Home/away splits
+
+4. **Correlation Analysis:**
+   - Identify positively correlated bets (e.g., high team total + player over props)
+   - Avoid negatively correlated bets
+
+**Output Format (JSON only, no markdown):**
+{
+  "suggestedBets": [
+    {
+      "type": "player_points",
+      "player": "Player Name",
+      "team": "Team Name",
+      "line": 25.5,
+      "selection": "over",
+      "odds": 1.91,
+      "confidence": 78,
+      "reasoning": "Brief explanation"
+    }
+  ],
+  "totalOdds": 5.2,
+  "gravityScore": 72,
+  "correlationWarnings": [],
+  "overallReasoning": "Why these bets work together as a SGM"
+}
+
+Respond with ONLY valid JSON, no additional text.`;
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        tools: [{ googleSearch: {} }],
+        generationConfig: {
+          temperature: 0.7,
+          topP: 0.95,
+          maxOutputTokens: 2048
+        }
+      })
+    });
+
+    if (!response.ok) throw new Error('Gemini API failed');
+
+    const data = await response.json();
+    const content = data.candidates[0].content.parts[0].text;
+
+    // Extract JSON from response
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No JSON found in response');
+
+    return JSON.parse(jsonMatch[0]);
+  } catch (error) {
+    console.error('Error generating SGM:', error);
+    return getMockSGM(game, targetOdds);
+  }
+};
+
+// Mock SGM fallback
+const getMockSGM = (game, targetOdds) => {
+  const target = parseFloat(targetOdds) || 5.0;
+  return {
+    suggestedBets: [
+      {
+        type: 'player_points',
+        player: 'LeBron James',
+        team: game.home,
+        line: 25.5,
+        selection: 'over',
+        odds: 1.85,
+        confidence: 82,
+        reasoning: 'Averaging 27.5 PPG in last 5 games vs this opponent'
+      },
+      {
+        type: 'team_total',
+        player: null,
+        team: game.home,
+        line: 112.5,
+        selection: 'over',
+        odds: 1.91,
+        confidence: 75,
+        reasoning: 'Team averaging 115 PPG at home this season'
+      },
+      {
+        type: 'player_assists',
+        player: 'Stephen Curry',
+        team: game.away,
+        line: 6.5,
+        selection: 'over',
+        odds: 1.83,
+        confidence: 79,
+        reasoning: 'Historic success in this arena (7.2 APG average)'
+      }
+    ],
+    totalOdds: (1.85 * 1.91 * 1.83).toFixed(2),
+    gravityScore: 79,
+    correlationWarnings: ['Home team total and home player points are positively correlated - good!'],
+    overallReasoning: 'This SGM targets a high-scoring game with strong individual performances from key players who have historical success in this matchup.'
+  };
+};
+
+// --- MAIN COMPONENT ---
+
 const App = () => {
-  const [selectedSport, setSelectedSport] = useState('nba');
+  const [selectedSport, setSelectedSport] = useState('basketball_nba');
   const [theme, setTheme] = useState(TEAMS[0]);
   const [showSettings, setShowSettings] = useState(false);
+  const [games, setGames] = useState([]);
+  const [loadingGames, setLoadingGames] = useState(false);
+  const [selectedGame, setSelectedGame] = useState(null);
+  const [showSGMBuilder, setShowSGMBuilder] = useState(false);
+  const [targetSGMOdds, setTargetSGMOdds] = useState('5.0');
+  const [generatingSGM, setGeneratingSGM] = useState(false);
+  const [sgmResult, setSgmResult] = useState(null);
   const [parlay, setParlay] = useState([]);
-  const [targetOdds, setTargetOdds] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(null);
-  const [analysisResult, setAnalysisResult] = useState(null);
 
+  // Theme engine
   useEffect(() => {
     document.documentElement.style.setProperty('--team-primary', theme.primary);
     document.documentElement.style.setProperty('--team-secondary', theme.secondary);
   }, [theme]);
 
-  const totalOddsString = useMemo(() => {
+  // Fetch games on sport change
+  useEffect(() => {
+    loadGames();
+  }, [selectedSport]);
+
+  const loadGames = async () => {
+    setLoadingGames(true);
+    const gamesData = await fetchTomorrowGames(selectedSport, ODDS_API_KEY);
+    setGames(gamesData);
+    setLoadingGames(false);
+  };
+
+  const openSGMBuilder = (game) => {
+    setSelectedGame(game);
+    setShowSGMBuilder(true);
+    setSgmResult(null);
+  };
+
+  const generateSGM = async () => {
+    setGeneratingSGM(true);
+    const result = await generateSameGameMulti(selectedGame, targetSGMOdds, GEMINI_API_KEY);
+    setSgmResult(result);
+    setGeneratingSGM(false);
+  };
+
+  const addSGMToSlip = () => {
+    if (sgmResult && sgmResult.suggestedBets) {
+      const sgmLegs = sgmResult.suggestedBets.map((bet, idx) => ({
+        id: `${selectedGame.id}_${idx}`,
+        team: bet.team,
+        player: bet.player,
+        market: `${bet.player || bet.team} ${bet.type.replace('_', ' ')} ${bet.selection} ${bet.line}`,
+        odds: bet.odds,
+        score: bet.confidence
+      }));
+      setParlay([...parlay, ...sgmLegs]);
+      setShowSGMBuilder(false);
+    }
+  };
+
+  const totalOdds = useMemo(() => {
     if (parlay.length === 0) return (1.00).toFixed(2);
     return parlay.reduce((acc, leg) => acc * leg.odds, 1).toFixed(2);
   }, [parlay]);
 
-  const addLeg = (leg) => {
-    if (!parlay.find(l => l.id === leg.id)) {
-      setParlay([...parlay, leg]);
-    }
-  };
-
   const removeLeg = (id) => setParlay(parlay.filter(l => l.id !== id));
-
-  const runAnalysis = async (game) => {
-    setIsAnalyzing(game.id);
-    setAnalysisResult(null);
-    try {
-      const data = await fetchSportsData(game, apiKey);
-      setAnalysisResult({ ...data, gameId: game.id });
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsAnalyzing(null);
-    }
-  };
-
-  const generateEdge = () => {
-    setIsGenerating(true);
-    setTimeout(() => {
-      const target = parseFloat(targetOdds) || 5.0;
-      const mockResult = [
-        { id: 101, team: 'Lakers', market: 'Moneyline', odds: 1.85, score: 82 },
-        { id: 102, team: 'Celtics', market: 'Over 220.5', odds: 1.91, score: 75 },
-        { id: 103, team: 'Man City', market: 'Win', odds: 1.45, score: 91 },
-      ];
-      setParlay(mockResult);
-      setIsGenerating(false);
-    }, 1500);
-  };
 
   return (
     <div className="min-h-screen bg-black text-white font-sans selection:bg-[var(--team-primary)]/30 overflow-hidden relative">
@@ -191,12 +374,13 @@ const App = () => {
         .text-glow {
           text-shadow: 0 0 15px var(--team-primary);
         }
-        ::-webkit-scrollbar { display: none; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); }
+        ::-webkit-scrollbar-thumb { background: var(--team-primary); }
       `}</style>
 
       <div className="scanline"></div>
 
-      {/* Background Portal Glow */}
       <div
         className="absolute top-[-20%] left-1/2 -translate-x-1/2 w-[1000px] h-[600px] blur-[150px] rounded-full -z-10"
         style={{ backgroundColor: `${theme.primary}11`, animation: 'pulse-glow 4s infinite' }}
@@ -216,45 +400,47 @@ const App = () => {
                 style={{ color: theme.primary }}
               />
             </div>
-            <div
-              className="absolute -inset-1 blur opacity-0 group-hover:opacity-100 transition-opacity"
-              style={{ backgroundColor: `${theme.primary}33` }}
-            ></div>
           </div>
           <div>
             <h1 className="text-3xl font-black italic tracking-tighter uppercase leading-none">
-              Antigravity<span style={{ color: theme.primary }}>.Multi</span>
+              Antigravity<span style={{ color: theme.primary }}>.SGM</span>
             </h1>
-            <div className="text-[10px] font-bold tracking-[0.4em] text-white/30 uppercase mt-1">Grounded Intelligence Engine</div>
+            <div className="text-[10px] font-bold tracking-[0.4em] text-white/30 uppercase mt-1">Same Game Multi Intelligence</div>
           </div>
         </div>
 
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={loadGames}
+            disabled={loadingGames}
+            className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-xs font-bold uppercase tracking-widest"
+          >
+            <RefreshCw size={14} className={loadingGames ? 'animate-spin' : ''} />
+            Refresh
+          </button>
           <button
             onClick={() => setShowSettings(true)}
-            className="p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-none transition-all group"
+            className="p-3 bg-white/5 hover:bg-white/10 border border-white/10 transition-all"
           >
-            <Settings size={20} className="text-white/60 group-hover:rotate-90 transition-all" style={{ color: theme.primary }} />
+            <Settings size={20} style={{ color: theme.primary }} />
           </button>
         </div>
       </header>
 
       <main className="max-w-[1800px] mx-auto grid grid-cols-1 lg:grid-cols-[1fr_420px] h-[calc(100vh-89px)]">
 
-        {/* Main Feed Area */}
+        {/* Games Feed */}
         <section className="p-8 overflow-y-auto border-r border-white/5">
 
-          {/* Sport Selection Hub */}
-          <div className="flex gap-4 mb-10 overflow-x-auto pb-4">
+          {/* Sport Tabs */}
+          <div className="flex gap-4 mb-8 overflow-x-auto pb-4">
             {SPORTS.map(sport => (
               <button
                 key={sport.id}
                 onClick={() => setSelectedSport(sport.id)}
-                className={`flex items-center gap-3 px-8 py-4 slanted transition-all duration-500 min-w-[160px] relative group ${selectedSport === sport.id
-                    ? 'text-black font-black scale-105'
-                    : 'bg-white/5 text-white/40 hover:bg-white/10'
+                className={`flex items-center gap-3 px-8 py-4 slanted transition-all duration-500 min-w-[180px] ${selectedSport === sport.id ? 'text-black font-black scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'
                   }`}
-                style={selectedSport === sport.id ? { backgroundColor: theme.primary, boxShadow: `0 0 20px ${theme.primary}55` } : {}}
+                style={selectedSport === sport.id ? { backgroundColor: theme.primary } : {}}
               >
                 <span className="text-xl">{sport.icon}</span>
                 <span className="uppercase text-xs tracking-[0.2em] font-bold">{sport.name}</span>
@@ -262,236 +448,123 @@ const App = () => {
             ))}
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-            {/* AI Control Center */}
-            <div className="space-y-8">
-              <div className="glass p-10 relative overflow-hidden group">
-                <div
-                  className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl opacity-20"
-                  style={{ backgroundColor: theme.primary }}
-                ></div>
-                <div className="relative z-10">
-                  <div className="flex items-center gap-3 mb-4" style={{ color: theme.primary }}>
-                    <Activity size={18} className="animate-pulse" />
-                    <span className="text-[10px] font-black uppercase tracking-[0.4em]">Neural Multi-Gen Active</span>
-                  </div>
-                  <h2 className="text-5xl font-black italic uppercase leading-none tracking-tighter mb-6">
-                    Target the <span className="text-glow" style={{ color: theme.primary }}>Value Gap</span>
-                  </h2>
-                  <p className="text-white/40 text-sm leading-relaxed mb-8 max-w-sm font-medium">
-                    Input your desired multiplier. AI scans real-time injury logs and venue metrics to reach your target odds.
-                  </p>
-
-                  <div className="flex flex-col sm:flex-row gap-4">
-                    <div className="flex-1 bg-black border border-white/10 flex items-center p-1 focus-within:border-white/30 transition-colors">
-                      <Target className="ml-5" size={20} style={{ color: theme.primary }} />
-                      <input
-                        type="text"
-                        placeholder="Target Odds (e.g. 5.0)"
-                        value={targetOdds}
-                        onChange={(e) => setTargetOdds(e.target.value)}
-                        className="bg-transparent border-none outline-none px-5 py-4 text-xl font-bold w-full placeholder:text-white/10 focus:ring-0"
-                      />
-                    </div>
-                    <button
-                      onClick={generateEdge}
-                      disabled={isGenerating}
-                      className="bg-white text-black font-black uppercase tracking-tighter px-10 py-5 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-4 group"
-                      style={{ backgroundColor: isGenerating ? '#333' : theme.primary }}
-                    >
-                      {isGenerating ? (
-                        <Dna className="animate-spin" size={24} />
-                      ) : (
-                        <>
-                          <TrendingUp size={24} className="group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
-                          <span>Generate Edge</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Analysis Display */}
-              {analysisResult && (
-                <div className="glass p-8 border-l-4 animate-in fade-in slide-in-from-left-4 duration-500" style={{ borderLeftColor: theme.primary }}>
-                  <div className="flex justify-between items-center mb-6">
-                    <h4 className="text-xs font-black uppercase tracking-[0.3em]" style={{ color: theme.primary }}>Grounded Deep-Dive Result</h4>
-                    <div className="px-3 py-1 text-[10px] font-black italic" style={{ backgroundColor: `${theme.primary}22`, color: theme.primary }}>ID: {analysisResult.gameId}</div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-6">
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <AlertTriangle size={14} className="text-red-500" />
-                          <span className="text-[9px] font-bold uppercase tracking-widest text-white/50">Injury Protocol</span>
-                        </div>
-                        <ul className="text-xs font-bold space-y-1">
-                          {analysisResult.injuries.map((injury, i) => (
-                            <li key={i} className="flex items-center gap-2">
-                              <span className="w-1 h-1 bg-red-500 rounded-full"></span>
-                              {injury}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <Activity size={14} style={{ color: theme.primary }} />
-                          <span className="text-[9px] font-bold uppercase tracking-widest text-white/50">Current Form</span>
-                        </div>
-                        <p className="text-xs font-bold leading-relaxed">{analysisResult.currentForm}</p>
-                      </div>
-                    </div>
-                    <div className="space-y-6">
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <Target size={14} style={{ color: theme.primary }} />
-                          <span className="text-[9px] font-bold uppercase tracking-widest text-white/50">Arena Dynamics</span>
-                        </div>
-                        <p className="text-xs font-bold leading-relaxed">{analysisResult.venueHistory}</p>
-                      </div>
-                      <div className="bg-white/5 p-4 flex flex-col items-center justify-center relative overflow-hidden">
-                        <div className="text-[8px] font-black uppercase tracking-[0.4em] text-white/20 mb-2">Confidence Score</div>
-                        <div className="text-4xl font-black italic" style={{ color: theme.primary }}>{analysisResult.gravityScore}%</div>
-                        <div className="absolute bottom-0 left-0 h-[2px] w-full" style={{ backgroundColor: `${theme.primary}44` }}></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+          {/* Upcoming Games Header */}
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <Calendar size={20} style={{ color: theme.primary }} />
+              <h2 className="text-xl font-black italic uppercase">Upcoming Games</h2>
             </div>
+            <div className="text-xs font-bold text-white/40 uppercase tracking-widest">
+              {games.length} {games.length === 1 ? 'Game' : 'Games'} Scheduled
+            </div>
+          </div>
 
-            {/* Live Board */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-black uppercase tracking-[0.2em] flex items-center gap-2 text-white/60">
-                  <LayoutDashboard size={14} />
-                  Live Board
-                </h3>
-                <div className="flex items-center gap-2 text-[10px] font-bold" style={{ color: theme.primary }}>
-                  <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: theme.primary }}></div>
-                  REAL-TIME SYNC
-                </div>
+          {/* Games List */}
+          <div className="space-y-4">
+            {loadingGames ? (
+              <div className="glass p-12 flex flex-col items-center justify-center">
+                <Dna className="animate-spin mb-4" size={32} style={{ color: theme.primary }} />
+                <p className="text-sm font-bold text-white/40 uppercase tracking-widest">Loading Games...</p>
               </div>
-
-              {(MOCK_GAMES[selectedSport] || []).map(game => (
-                <div key={game.id} className="glass p-6 group hover:border-white/20 transition-all border-l-2 border-l-transparent hover:border-l-[var(--team-primary)]" style={{ borderLeftColor: theme.primary }}>
+            ) : games.length === 0 ? (
+              <div className="glass p-12 flex flex-col items-center justify-center">
+                <AlertTriangle size={32} className="text-white/20 mb-4" />
+                <p className="text-sm font-bold text-white/40 uppercase tracking-widest">No Games Tomorrow</p>
+              </div>
+            ) : (
+              games.map(game => (
+                <div key={game.id} className="glass p-6 hover:border-white/20 transition-all border-l-4 group" style={{ borderLeftColor: theme.primary }}>
                   <div className="flex justify-between items-start mb-6">
                     <div className="space-y-4 flex-1">
-                      <div className="flex items-center justify-between group/row">
+                      <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-white/5 border border-white/10 flex items-center justify-center font-black group-hover/row:border-white/20 transition-colors">
+                          <div className="w-10 h-10 bg-white/5 border border-white/10 flex items-center justify-center font-black">
                             {game.home[0]}
                           </div>
-                          <span className="font-black italic uppercase tracking-tighter text-lg">{game.home}</span>
+                          <span className="font-black italic uppercase text-lg">{game.home}</span>
                         </div>
-                        <span className="text-xs font-mono text-white/30">{game.odds[0]}</span>
+                        <span className="text-xs font-mono text-white/40">{game.odds[0]}</span>
                       </div>
-                      <div className="flex items-center justify-between group/row">
+                      <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-white/5 border border-white/10 flex items-center justify-center font-black group-hover/row:border-white/20 transition-colors">
+                          <div className="w-10 h-10 bg-white/5 border border-white/10 flex items-center justify-center font-black">
                             {game.away[0]}
                           </div>
-                          <span className="font-black italic uppercase tracking-tighter text-lg">{game.away}</span>
+                          <span className="font-black italic uppercase text-lg">{game.away}</span>
                         </div>
-                        <span className="text-xs font-mono text-white/30">{game.odds[1]}</span>
+                        <span className="text-xs font-mono text-white/40">{game.odds[1]}</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between mb-6 px-1">
-                    <div className="text-[10px] font-bold tracking-widest text-white/30 truncate max-w-[150px]">
-                      {game.venue}
+                  <div className="flex items-center justify-between mb-6 text-[10px] font-bold text-white/30 uppercase tracking-widest">
+                    <div className="flex items-center gap-4">
+                      <span className="flex items-center gap-2">
+                        <Calendar size={12} />
+                        {game.date}
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <Clock size={12} />
+                        {game.time}
+                      </span>
                     </div>
-                    <div className="text-[10px] font-black" style={{ color: theme.primary }}>
-                      {game.time}
-                    </div>
+                    <span className="truncate max-w-[200px]">{game.venue}</span>
                   </div>
 
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => runAnalysis(game)}
-                      disabled={isAnalyzing === game.id}
-                      className="flex-1 bg-white/5 border border-white/10 py-3.5 text-[10px] font-black uppercase tracking-[0.2em] hover:bg-white/10 transition-colors flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
-                    >
-                      {isAnalyzing === game.id ? <Activity className="animate-pulse" style={{ color: theme.primary }} size={16} /> : <Search size={16} />}
-                      Deep Dive
-                    </button>
-                    <button
-                      onClick={() => addLeg({ id: game.id, team: game.home, market: 'Moneyline', odds: game.odds[0], score: 85 })}
-                      className="px-6 bg-white/5 border border-white/10 hover:text-black transition-all flex items-center justify-center active:scale-90"
-                      style={{ hoverBackgroundColor: theme.primary }}
-                      onMouseEnter={(e) => e.target.style.backgroundColor = theme.primary}
-                      onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-                    >
-                      <Plus size={20} />
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => openSGMBuilder(game)}
+                    className="w-full py-4 font-black uppercase tracking-tighter text-sm flex items-center justify-center gap-3 transition-all hover:scale-[1.02]"
+                    style={{ backgroundColor: theme.primary, color: '#000' }}
+                  >
+                    <Sparkles size={18} fill="currentColor" />
+                    Build Same Game Multi
+                  </button>
                 </div>
-              ))}
-            </div>
+              ))
+            )}
           </div>
         </section>
 
-        {/* Sidebar / Multi-Slip */}
-        <aside className="bg-white/[0.01] p-8 flex flex-col h-full border-l border-white/5 shadow-2xl relative">
-          <div
-            className="absolute top-0 right-0 w-full h-[1px]"
-            style={{ backgroundImage: `linear-gradient(to right, transparent, ${theme.primary}55, transparent)` }}
-          ></div>
-
+        {/* Parlay Sidebar */}
+        <aside className="bg-white/[0.01] p-8 flex flex-col h-full border-l border-white/5 overflow-hidden">
           <div className="flex items-center justify-between mb-10">
             <div className="flex items-center gap-3">
               <Zap style={{ color: theme.primary }} size={20} strokeWidth={3} />
-              <h3 className="font-black italic uppercase tracking-tighter text-2xl">
-                Multi-Builder
-              </h3>
+              <h3 className="font-black italic uppercase tracking-tighter text-2xl">Multi-Builder</h3>
             </div>
-            <div className="bg-white/5 px-3 py-1 border border-white/10 text-[10px] font-black tracking-widest">
-              {parlay.length} SELECTIONS
+            <div className="bg-white/5 px-3 py-1 border border-white/10 text-[10px] font-black">
+              {parlay.length} LEGS
             </div>
           </div>
 
           <div className="flex-1 space-y-4 overflow-y-auto pb-10">
             {parlay.length === 0 ? (
-              <div className="h-60 flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-none group hover:border-white/10 transition-colors">
-                <div className="w-16 h-16 bg-white/5 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                  <Plus size={32} className="text-white/10" />
-                </div>
-                <p className="text-[10px] uppercase font-black tracking-[0.3em] text-white/20">Awaiting Selections</p>
+              <div className="h-60 flex flex-col items-center justify-center border-2 border-dashed border-white/5">
+                <Plus size={32} className="text-white/10 mb-4" />
+                <p className="text-[10px] uppercase font-black tracking-[0.3em] text-white/20">Build Your SGM</p>
               </div>
             ) : (
               parlay.map(leg => (
-                <div key={leg.id} className="bg-black border border-white/5 p-6 relative group hover:border-white/20 transition-all border-l-4" style={{ borderLeftColor: theme.primary }}>
+                <div key={leg.id} className="bg-black border border-white/5 p-6 group hover:border-white/20 transition-all border-l-4 relative" style={{ borderLeftColor: theme.primary }}>
                   <button
                     onClick={() => removeLeg(leg.id)}
-                    className="absolute top-4 right-4 text-white/20 hover:text-red-500 transition-colors z-20"
+                    className="absolute top-4 right-4 text-white/20 hover:text-red-500 transition-colors"
                   >
                     <X size={16} />
                   </button>
 
-                  <div className="relative z-10">
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h4 className="font-black italic uppercase text-lg leading-none mb-1" style={{ color: theme.primary }}>{leg.team}</h4>
-                        <p className="text-[9px] text-white/40 font-bold uppercase tracking-[0.2em]">{leg.market}</p>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-lg font-black italic tracking-tighter">{leg.odds.toFixed(2)}</div>
-                      </div>
-                    </div>
+                  <div>
+                    <h4 className="font-black italic uppercase text-sm leading-none mb-2" style={{ color: theme.primary }}>
+                      {leg.player || leg.team}
+                    </h4>
+                    <p className="text-[9px] text-white/40 font-bold uppercase tracking-widest mb-3">{leg.market}</p>
 
-                    <div className="pt-4 border-t border-white/5 flex items-center justify-between">
+                    <div className="flex justify-between items-center pt-3 border-t border-white/5">
                       <div className="flex items-baseline gap-2">
-                        <span className="text-xl font-black italic leading-none">{leg.score}%</span>
-                        <span className="text-[8px] font-bold uppercase tracking-widest text-white/20">Gravity</span>
+                        <span className="text-lg font-black">{leg.score}%</span>
+                        <span className="text-[8px] text-white/20 uppercase tracking-widest">Confidence</span>
                       </div>
-                      <div className="flex items-center gap-1 opacity-50">
-                        {[1, 2, 3, 4, 5].map(i => (
-                          <div key={i} className={`w-1 h-3 ${i <= (leg.score / 20) ? 'bg-white' : 'bg-white/10'}`} style={i <= (leg.score / 20) ? { backgroundColor: theme.primary } : {}}></div>
-                        ))}
-                      </div>
+                      <div className="text-lg font-black italic">{leg.odds.toFixed(2)}</div>
                     </div>
                   </div>
                 </div>
@@ -499,111 +572,196 @@ const App = () => {
             )}
           </div>
 
-          {/* Checkout Totals */}
           <div className="mt-auto border-t border-white/10 pt-8 space-y-6">
-            <div className="space-y-2">
-              <div className="flex justify-between items-end">
-                <p className="text-[10px] font-black text-white/30 uppercase tracking-[0.3em]">Combined Multi Odds</p>
-                <div className="text-4xl font-black italic tracking-tighter leading-none text-glow" style={{ color: theme.primary }}>{totalOddsString}</div>
-              </div>
-            </div>
-
-            <div className="bg-white/5 p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <ShieldCheck size={18} style={{ color: theme.primary }} />
-                <div className="leading-none">
-                  <div className="text-[10px] font-black uppercase tracking-widest mb-1">Risk Assessment</div>
-                  <div className="text-xs font-bold text-white/60 uppercase">Physics Validated</div>
-                </div>
-              </div>
-              <div className="text-2xl font-black italic" style={{ color: theme.primary }}>
-                {parlay.length > 0 ? (parlay.reduce((acc, l) => acc + l.score, 0) / parlay.length).toFixed(0) : 0}%
-              </div>
+            <div className="flex justify-between items-end">
+              <p className="text-[10px] font-black text-white/30 uppercase tracking-widest">Total Odds</p>
+              <div className="text-4xl font-black italic" style={{ color: theme.primary }}>{totalOdds}</div>
             </div>
 
             <button
-              className="w-full text-black py-5 font-black italic uppercase tracking-tighter text-xl hover:scale-[1.02] active:scale-95 transition-all shadow-2xl group relative overflow-hidden"
+              className="w-full py-5 font-black italic uppercase text-xl transition-all hover:scale-[1.02] disabled:opacity-30"
               disabled={parlay.length === 0}
-              style={{ backgroundColor: theme.primary, boxShadow: `0 15px 40px -10px ${theme.primary}66` }}
+              style={{ backgroundColor: theme.primary, color: '#000' }}
             >
-              <span className="relative z-10 flex items-center justify-center gap-3">
+              <span className="flex items-center justify-center gap-3">
                 <Zap size={20} fill="currentColor" />
-                Lock In Protocol
+                Lock In Multi
               </span>
             </button>
           </div>
         </aside>
       </main>
 
-      {/* Settings Tray */}
-      {showSettings && (
+      {/* SGM Builder Modal */}
+      {showSGMBuilder && selectedGame && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-          <div className="absolute inset-0 bg-black/95 backdrop-blur-3xl" onClick={() => setShowSettings(false)}></div>
-          <div className="w-full max-w-2xl glass p-10 relative overflow-hidden animate-in zoom-in-95 duration-300">
-            <div className="absolute top-0 right-0 w-64 h-64 blur-[100px] -z-10 opacity-20" style={{ backgroundColor: theme.primary }}></div>
+          <div className="absolute inset-0 bg-black/95 backdrop-blur-3xl" onClick={() => setShowSGMBuilder(false)}></div>
+          <div className="w-full max-w-4xl glass p-10 relative max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-300">
 
-            <div className="flex justify-between items-center mb-10 border-b border-white/5 pb-6">
+            <div className="flex justify-between items-start mb-8 border-b border-white/5 pb-6">
               <div>
-                <h3 className="text-3xl font-black italic uppercase tracking-tighter">Vanity <span style={{ color: theme.primary }}>Protocol</span></h3>
-                <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest mt-1">Holographic UI Customization</p>
+                <h3 className="text-3xl font-black italic uppercase mb-2">
+                  Same Game <span style={{ color: theme.primary }}>Multi Builder</span>
+                </h3>
+                <p className="text-sm text-white/40 font-bold uppercase tracking-widest">
+                  {selectedGame.home} vs {selectedGame.away}
+                </p>
               </div>
               <button
-                onClick={() => setShowSettings(false)}
-                className="bg-white/5 hover:bg-white/10 p-3 rounded-none border border-white/10 transition-all hover:rotate-90"
+                onClick={() => setShowSGMBuilder(false)}
+                className="bg-white/5 hover:bg-white/10 p-3 border border-white/10 transition-all"
               >
                 <X size={24} />
               </button>
             </div>
 
-            <div className="space-y-8">
-              <div>
-                <label className="text-[10px] font-black uppercase tracking-[0.4em] text-white/40 mb-6 block">Select Influence Profile</label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-h-[400px] overflow-y-auto pr-4">
-                  {TEAMS.map((t, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => setTheme(t)}
-                      className={`flex flex-col items-start gap-4 p-5 border-2 transition-all duration-300 relative group ${theme.name === t.name
-                          ? 'bg-white/5 border-white'
-                          : 'bg-black/40 border-white/5 hover:border-white/20'
-                        }`}
-                      style={theme.name === t.name ? { borderColor: theme.primary } : {}}
-                    >
-                      <div className="flex justify-between items-center w-full">
-                        <div
-                          className="w-5 h-5 rounded-none border border-white/20"
-                          style={{ backgroundColor: t.primary, boxShadow: `0 0 15px ${t.primary}55` }}
-                        ></div>
-                        <div
-                          className="w-2 h-2 rounded-full"
-                          style={{ backgroundColor: t.secondary }}
-                        ></div>
-                      </div>
-                      <span className="font-black italic uppercase text-[10px] tracking-widest text-left leading-tight">{t.name}</span>
-                    </button>
-                  ))}
+            {/* Target Odds Input */}
+            <div className="mb-8">
+              <label className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-4 block">
+                Target Total Odds
+              </label>
+              <div className="flex gap-4">
+                <div className="flex-1 bg-black border border-white/10 flex items-center p-1">
+                  <Target className="ml-5" size={20} style={{ color: theme.primary }} />
+                  <input
+                    type="text"
+                    placeholder="e.g. 5.0"
+                    value={targetSGMOdds}
+                    onChange={(e) => setTargetSGMOdds(e.target.value)}
+                    className="bg-transparent border-none outline-none px-5 py-4 text-xl font-bold w-full"
+                  />
                 </div>
-              </div>
-
-              <div className="p-6 border border-white/10 bg-white/5 rounded-none relative">
-                <div className="absolute top-0 left-0 w-1 h-full" style={{ backgroundColor: theme.primary }}></div>
-                <div className="flex items-center gap-3 mb-3" style={{ color: theme.primary }}>
-                  <ShieldCheck size={18} />
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em]">Synchronization Notice</span>
-                </div>
-                <p className="text-[10px] text-white/50 leading-relaxed font-medium">
-                  Applying a team profile will recalibrate the holographic light-field and accent nodes.
-                </p>
+                <button
+                  onClick={generateSGM}
+                  disabled={generatingSGM}
+                  className="px-10 py-5 font-black uppercase tracking-tighter flex items-center gap-3 transition-all hover:scale-[1.02] disabled:opacity-50"
+                  style={{ backgroundColor: theme.primary, color: '#000' }}
+                >
+                  {generatingSGM ? (
+                    <Dna className="animate-spin" size={24} />
+                  ) : (
+                    <>
+                      <Sparkles size={24} />
+                      Generate
+                    </>
+                  )}
+                </button>
               </div>
             </div>
 
-            <button
-              onClick={() => setShowSettings(false)}
-              className="w-full mt-10 text-black py-5 font-black uppercase tracking-tighter text-lg hover:brightness-110 transition-all shadow-2xl"
-              style={{ backgroundColor: theme.primary }}
-            >
-              Initialize Profile Update
-            </button>
+            {/* SGM Result */}
+            {sgmResult && (
+              <div className="space-y-6">
+                <div className="glass p-6 border-l-4" style={{ borderLeftColor: theme.primary }}>
+                  <div className="flex items-center justify-between mb-6">
+                    <h4 className="text-xs font-black uppercase tracking-widest" style={{ color: theme.primary }}>
+                      AI-Generated Same Game Multi
+                    </h4>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <div className="text-[10px] text-white/40 uppercase tracking-widest">Total Odds</div>
+                        <div className="text-2xl font-black italic">{sgmResult.totalOdds}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[10px] text-white/40 uppercase tracking-widest">Gravity Score</div>
+                        <div className="text-2xl font-black italic" style={{ color: theme.primary }}>{sgmResult.gravityScore}%</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Individual Bets */}
+                  <div className="space-y-3 mb-6">
+                    {sgmResult.suggestedBets.map((bet, idx) => (
+                      <div key={idx} className="bg-black/40 p-4 border border-white/5">
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <h5 className="font-black uppercase text-sm" style={{ color: theme.primary }}>
+                              {bet.player || bet.team}
+                            </h5>
+                            <p className="text-[10px] text-white/40 uppercase tracking-widest">
+                              {bet.type.replace('_', ' ')} {bet.selection} {bet.line}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-lg font-black">{bet.odds}</div>
+                            <div className="text-[10px] text-white/40">{bet.confidence}% conf.</div>
+                          </div>
+                        </div>
+                        <p className="text-xs text-white/60 leading-relaxed">{bet.reasoning}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Overall Reasoning */}
+                  <div className="bg-white/5 p-4 border border-white/10">
+                    <h5 className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-2">Analysis</h5>
+                    <p className="text-sm text-white/80 leading-relaxed">{sgmResult.overallReasoning}</p>
+                  </div>
+
+                  {/* Correlation Warnings */}
+                  {sgmResult.correlationWarnings && sgmResult.correlationWarnings.length > 0 && (
+                    <div className="mt-4 p-4 border border-green-500/20 bg-green-500/5">
+                      <div className="flex items-center gap-2 text-green-500 mb-2">
+                        <ShieldCheck size={16} />
+                        <span className="text-[10px] font-black uppercase tracking-widest">Correlation Check</span>
+                      </div>
+                      {sgmResult.correlationWarnings.map((warning, idx) => (
+                        <p key={idx} className="text-xs text-white/60">{warning}</p>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={addSGMToSlip}
+                    className="w-full mt-6 py-4 font-black uppercase tracking-tighter text-lg transition-all hover:scale-[1.02]"
+                    style={{ backgroundColor: theme.primary, color: '#000' }}
+                  >
+                    Add to Multi-Builder
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-black/95 backdrop-blur-3xl" onClick={() => setShowSettings(false)}></div>
+          <div className="w-full max-w-2xl glass p-10 relative">
+            <div className="flex justify-between items-center mb-10 border-b border-white/5 pb-6">
+              <h3 className="text-3xl font-black italic uppercase">
+                Vanity <span style={{ color: theme.primary }}>Protocol</span>
+              </h3>
+              <button onClick={() => setShowSettings(false)} className="bg-white/5 p-3 border border-white/10">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-h-[400px] overflow-y-auto pr-4">
+              {TEAMS.map((t, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setTheme(t)}
+                  className={`flex flex-col items-start gap-4 p-5 border-2 transition-all ${theme.name === t.name ? 'border-white' : 'border-white/5 hover:border-white/20'
+                    }`}
+                  style={theme.name === t.name ? { borderColor: theme.primary, backgroundColor: `${theme.primary}11` } : {}}
+                >
+                  <div className="flex justify-between items-center w-full">
+                    <div
+                      className="w-5 h-5 border border-white/20"
+                      style={{ backgroundColor: t.primary }}
+                    ></div>
+                    <div
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: t.secondary }}
+                    ></div>
+                  </div>
+                  <span className="font-black italic uppercase text-[10px] tracking-widest">{t.name}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
